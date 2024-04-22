@@ -135,7 +135,7 @@ def train(config, train_loader, model, criterion, optimizer):
 
         avg_meters['loss'].update(loss.item(), input.size(0))
         avg_meters['iou'].update(iou, input.size(0))
-        avg_meter['dsc'].update(dsc, input.size(0))
+        avg_meters['dsc'].update(dsc, input.size(0))
 
         postfix = OrderedDict([
             ('loss', avg_meters['loss'].avg),

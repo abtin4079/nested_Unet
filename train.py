@@ -18,7 +18,7 @@ from tqdm import tqdm
 import archs
 import losses
 from dataset import Dataset
-from metrics import iou_score
+from metrics import *
 from utils import AverageMeter, str2bool
 
 ARCH_NAMES = archs.__all__
@@ -103,7 +103,8 @@ def parse_args():
 
 def train(config, train_loader, model, criterion, optimizer):
     avg_meters = {'loss': AverageMeter(),
-                  'iou': AverageMeter()}
+                  'iou': AverageMeter(), 
+                  "dsc": AverageMeter()}
 
     model.train()
 
@@ -120,10 +121,12 @@ def train(config, train_loader, model, criterion, optimizer):
                 loss += criterion(output, target)
             loss /= len(outputs)
             iou = iou_score(outputs[-1], target)
+            dsc = dice_coef(outputs[-1], target)
         else:
             output = model(input)
             loss = criterion(output, target)
             iou = iou_score(output, target)
+            dsc = dice_coef(output, target)
 
         # compute gradient and do optimizing step
         optimizer.zero_grad()
@@ -132,22 +135,26 @@ def train(config, train_loader, model, criterion, optimizer):
 
         avg_meters['loss'].update(loss.item(), input.size(0))
         avg_meters['iou'].update(iou, input.size(0))
+        avg_meter['dsc'].update(dsc, input.size(0))
 
         postfix = OrderedDict([
             ('loss', avg_meters['loss'].avg),
             ('iou', avg_meters['iou'].avg),
+            ('dsc', avg_meters['dsc'].avg),
         ])
         pbar.set_postfix(postfix)
         pbar.update(1)
     pbar.close()
 
     return OrderedDict([('loss', avg_meters['loss'].avg),
-                        ('iou', avg_meters['iou'].avg)])
+                        ('iou', avg_meters['iou'].avg),
+                        'dsc', avg_meters['dsc'].avg])
 
 
 def validate(config, val_loader, model, criterion):
     avg_meters = {'loss': AverageMeter(),
-                  'iou': AverageMeter()}
+                  'iou': AverageMeter(), 
+                  'dsc': AverageMeter(),}
 
     # switch to evaluate mode
     model.eval()
@@ -166,24 +173,29 @@ def validate(config, val_loader, model, criterion):
                     loss += criterion(output, target)
                 loss /= len(outputs)
                 iou = iou_score(outputs[-1], target)
+                dsc = dice_coef(outputs[-1], target)
             else:
                 output = model(input)
                 loss = criterion(output, target)
                 iou = iou_score(output, target)
+                dsc = dice_coef(outputs, target)
 
             avg_meters['loss'].update(loss.item(), input.size(0))
             avg_meters['iou'].update(iou, input.size(0))
+            avg_meters['dsc'].update(dsc, input.size(0))
 
             postfix = OrderedDict([
                 ('loss', avg_meters['loss'].avg),
                 ('iou', avg_meters['iou'].avg),
+                ('dsc', avg_meters['dsc'].avg),
             ])
             pbar.set_postfix(postfix)
             pbar.update(1)
         pbar.close()
 
     return OrderedDict([('loss', avg_meters['loss'].avg),
-                        ('iou', avg_meters['iou'].avg)])
+                        ('iou', avg_meters['iou'].avg),
+                        ('dsc', avg_meters['dsc'].avg)])
 
 
 def main():
@@ -303,9 +315,11 @@ def main():
         ('iou', []),
         ('val_loss', []),
         ('val_iou', []),
+        ('dsc', []),
+        ('val_dsc', []),
     ])
 
-    best_iou = 0
+    best_dsc = 0
     trigger = 0
     for epoch in range(config['epochs']):
         print('Epoch [%d/%d]' % (epoch, config['epochs']))
@@ -320,25 +334,28 @@ def main():
         elif config['scheduler'] == 'ReduceLROnPlateau':
             scheduler.step(val_log['loss'])
 
-        print('loss %.4f - iou %.4f - val_loss %.4f - val_iou %.4f'
-              % (train_log['loss'], train_log['iou'], val_log['loss'], val_log['iou']))
+        print('loss %.4f - iou %.4f - val_loss %.4f - val_iou %.4f - dcs %0.4f - val_dsc %.4f'
+              % (train_log['loss'], train_log['iou'], val_log['loss'], val_log['iou'], train_log['dsc'], val_log['dsc']))
 
         log['epoch'].append(epoch)
         log['lr'].append(config['lr'])
         log['loss'].append(train_log['loss'])
         log['iou'].append(train_log['iou'])
+        log['dsc'].append(train_log['dsc'])
         log['val_loss'].append(val_log['loss'])
         log['val_iou'].append(val_log['iou'])
+        log['val_dsc'].append(val_log['dsc'])
+
 
         pd.DataFrame(log).to_csv('models/%s/log.csv' %
                                  config['name'], index=False)
 
         trigger += 1
 
-        if val_log['iou'] > best_iou:
+        if val_log['dsc'] > best_dsc:
             torch.save(model.state_dict(), 'models/%s/model.pth' %
                        config['name'])
-            best_iou = val_log['iou']
+            best_dsc = val_log['dsc']
             print("=> saved best model")
             trigger = 0
 

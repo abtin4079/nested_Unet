@@ -13,7 +13,7 @@ from tqdm import tqdm
 
 import archs
 from dataset import Dataset
-from metrics import iou_score
+from metrics import *
 from utils import AverageMeter
 
 
@@ -97,6 +97,9 @@ def main():
             iou = iou_score(output, target)
             avg_meter.update(iou, input.size(0))
 
+            dsc = dice_coef(output, target)
+            avg_meter.update(dsc, input.size(0))
+
             output = torch.sigmoid(output).cpu().numpy()
 
             for i in range(len(output)):
@@ -105,6 +108,7 @@ def main():
                                 (output[i, c] * 255).astype('uint8'))
 
     print('IoU: %.4f' % avg_meter.avg)
+    print('Dsc: %.4f' % avg_meter.avg)
 
     torch.cuda.empty_cache()
 
